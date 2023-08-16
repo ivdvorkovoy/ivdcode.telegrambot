@@ -1,2 +1,2 @@
-# ivdcode.telegrambot
-Telegram бот для Битрикс (БУС)
+# Telegram-бот для Битрикс (БУС)
+
