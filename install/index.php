@@ -1,4 +1,9 @@
 <?php
+/**
+ * @author Ivan Dvorkovoy
+ * @copyright Copyright (c) 2023 Ivan Dvorkovoy
+ * @license @link https://github.com/ivdvorkovoy/ivdcode.telegrambot/blob/master/LICENSE GPL-3.0 License
+ */
 
 use Bitrix\Main\Application;
 use Bitrix\Main\Config\Option;
@@ -8,6 +13,11 @@ use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ModuleManager;
 use CAgent;
 use Carbon\Carbon;
+use IVDCode\TelegramBot\Agents\QueueAgent;
+use IVDCode\TelegramBot\Highloads\TelegramUsers;
+use IVDCode\TelegramBot\Services\WebhookService;
+use IVDCode\TelegramBot\Tables\QueueMessageTable;
+use IVDCode\TelegramBot\Tables\QueueTable;
 
 Loc::loadMessages(__FILE__);
 
@@ -46,6 +56,7 @@ class ivdcode_telegrambot extends CModule
         Loader::includeModule($this->MODULE_ID);
 
         $this->installDB();
+        $this->installHL();
         $this->installFiles();
         $this->installAgents();
         $this->addHandlers();
@@ -64,6 +75,7 @@ class ivdcode_telegrambot extends CModule
                 break;
             case 2:
                 if ($request['savedata'] != 'Y') {
+                    $this->uninstallHL();
                     $this->uninstallDB();
                 }
 
@@ -82,41 +94,94 @@ class ivdcode_telegrambot extends CModule
 
     public function installDB(): void
     {
-
+        QueueTable::createTable();
+        QueueMessageTable::createTable();
     }
 
-    public function installFiles(): void
+    public function installHL(): void
     {
+        TelegramUsers::create();
+    }
 
+    public function installFiles(): bool
+    {
+        copyDirFiles(
+            $_SERVER['DOCUMENT_ROOT'] . '/local/modules/' . $this->MODULE_ID . '/install/admin',
+            $_SERVER['DOCUMENT_ROOT'] . '/bitrix/admin',
+            true, true
+        );
+        copyDirFiles(
+            $_SERVER['DOCUMENT_ROOT'] . '/local/modules/' . $this->MODULE_ID . '/install/user_api',
+            $_SERVER['DOCUMENT_ROOT'] . '/',
+            true, true
+        );
+        return true;
     }
 
     public function installAgents(): void
     {
+        CAgent::AddAgent(
+            '\\' . QueueAgent::class . '::processMessageQueue();',
+            $this->MODULE_ID,
+            "N",
+            600,
+            date("d.m.Y H:i:s", strtotime(" +1 minutes")),
+            "Y",
+            date("d.m.Y H:i:s", strtotime(" +1 minutes")),
+            100
+        );
 
+        CAgent::AddAgent(
+            '\\' . QueueAgent::class . '::getMessageQueue();',
+            $this->MODULE_ID,
+            "N",
+            600,
+            date("d.m.Y H:i:s", strtotime(" +5 minutes")),
+            "Y",
+            date("d.m.Y H:i:s", strtotime(" +5 minutes")),
+            100
+        );
     }
 
     public function addHandlers(): void
     {
-
+        $eventManager = EventManager::getInstance();
+        $eventManager->registerEventHandler('main', 'OnBuildGlobalMenu', $this->MODULE_ID, '\IVDCode\TelegramBot\Menu', 'addGlobalMenuItem');
     }
 
     public function uninstallDB(): void
     {
-
+        QueueTable::deleteTable();
+        QueueMessageTable::deleteTable();
     }
 
-    public function uninstallFiles(): void
+    public function uninstallHL(): void
     {
-
+        TelegramUsers::delete();
     }
 
-    public function uninstallAgents(): void
+    public function uninstallFiles(): bool
     {
+        deleteDirFiles(
+            $_SERVER['DOCUMENT_ROOT'] . '/local/modules/' . $this->MODULE_ID . '/install/admin',
+            $_SERVER['DOCUMENT_ROOT'] . '/bitrix/admin'
+        );
+        deleteDirFiles(
+            $_SERVER['DOCUMENT_ROOT'] . '/local/modules/' . $this->MODULE_ID . '/install/user_api',
+            $_SERVER['DOCUMENT_ROOT'] . '/'
+        );
+        return true;
+    }
 
+    public function uninstallAgents(): bool
+    {
+        CAgent::RemoveModuleAgents($this->MODULE_ID);
+        return true;
     }
 
     public function deleteHandlers(): void
-    {
+    {$eventManager = EventManager::getInstance();
+        $eventManager->unRegisterEventHandler('main', 'OnBuildGlobalMenu', $this->MODULE_ID, '\IVDCode\TelegramBot\Menu', 'addGlobalMenuItem');
 
     }
 
